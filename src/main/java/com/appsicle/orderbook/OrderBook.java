@@ -180,7 +180,6 @@ public class OrderBook implements Closeable {
         return orderID++;
     }
 
-
     private void executeTrade(long sellOrderID, byte side1, long buyOrderID, byte side2, long orderSize) {
         ExecutionReport.setOrderID(executionReport, sellOrderID);
         ExecutionReport.setOrderSize(executionReport, orderSize);
@@ -226,7 +225,6 @@ public class OrderBook implements Closeable {
             long bid = maxBid;
 
             do {
-                assert bid < maxPrice;
                 long pricePointEntry = getPricePointEntry(bid);
                 long ppSize = PricePointEntry.getSize(pricePointEntry);
                 if (ppSize > 0) {
@@ -246,8 +244,6 @@ public class OrderBook implements Closeable {
             long levelsRemaining = level;
             long ask = minAsk;
             do {
-                assert ask > minPrice;
-
                 long pricePointEntry = getPricePointEntry(ask);
                 long ppSize = PricePointEntry.getSize(pricePointEntry);
                 if (ppSize > 0) {
