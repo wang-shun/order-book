@@ -5,7 +5,7 @@ import com.questdb.std.Unsafe;
 
 import java.io.Closeable;
 
-public class MatchingEngine implements Closeable {
+public class OrderBook implements Closeable {
     private final ExecutionReportHandler onExecution;
     private final long executionReport;
     private long maxBid;
@@ -21,10 +21,10 @@ public class MatchingEngine implements Closeable {
     private long bidLevelCount;
     private long askLevelCount;
 
-    public MatchingEngine(long minPrice, long maxPrice, long maxOrders, ExecutionReportHandler onExecution) {
+    public OrderBook(long minPrice, long maxPrice, long maxOrders, ExecutionReportHandler onExecution) {
         this.minPrice = minPrice;
         this.maxPrice = maxPrice;
-        this.pricePointMemSize = (maxPrice - minPrice + 1) * PricePointEntry.SIZE;
+        this.pricePointMemSize = (maxPrice - minPrice + 1) * PricePointEntry.SIZE   ;
         this.pricePoints = Unsafe.malloc(this.pricePointMemSize);
         this.orderBookMemSize = maxOrders * OrderBookEntry.SIZE;
         Unsafe.getUnsafe().setMemory(this.pricePoints, this.pricePointMemSize, (byte) 0);
@@ -58,6 +58,10 @@ public class MatchingEngine implements Closeable {
         assert orderID < maxOrders;
 
         long price = Order.getPrice(order);
+        if (price < minPrice || price > maxPrice) {
+            resizePricePoints(price);
+        }
+
         long orderSize = Order.getSize(order);
 
         if (Order.getSide(order) == OrderSides.BUY) {
@@ -117,6 +121,29 @@ public class MatchingEngine implements Closeable {
         }
 
         return -1;
+    }
+
+    private void resizePricePoints(long price) {
+        if (price < minPrice) {
+            long size = (maxPrice - price + 1) * PricePointEntry.SIZE;
+            long mem = Unsafe.malloc(size);
+            Unsafe.getUnsafe().copyMemory(pricePoints, mem + (minPrice - price) * PricePointEntry.SIZE, pricePointMemSize);
+            Unsafe.getUnsafe().setMemory(mem, (minPrice - price) * PricePointEntry.SIZE, (byte) 0);
+            Unsafe.free(pricePoints, pricePointMemSize);
+            pricePointMemSize = size;
+            pricePoints = mem;
+            minPrice = price;
+        } else {
+            // price > maxPrice
+            long size = (price - minPrice + 1) * PricePointEntry.SIZE;
+            long mem = Unsafe.malloc(size);
+            Unsafe.getUnsafe().copyMemory(pricePoints, mem, pricePointMemSize);
+            Unsafe.getUnsafe().setMemory(mem + pricePointMemSize, (price - maxPrice) * PricePointEntry.SIZE, (byte) 0);
+            Unsafe.free(pricePoints, pricePointMemSize);
+            pricePointMemSize = size;
+            pricePoints = mem;
+            maxPrice = price;
+        }
     }
 
     private void executeAllAtPricePoint(long pricePointEntry, byte side1, byte side2) {
@@ -247,8 +274,8 @@ public class MatchingEngine implements Closeable {
         long ask = minAsk;
         while (level < levelsRemaining) {
 
-            assert ask > minPrice;
-            assert bid < maxPrice;
+            assert ask >= minPrice;
+            assert bid <= maxPrice;
 
             long bidEntry;
             long bidSize;
@@ -257,7 +284,7 @@ public class MatchingEngine implements Closeable {
             long askSize;
             long askPrice;
 
-            if (bid > minPrice) {
+            if (level < bidLevelCount) {
                 do {
                     bidEntry = getPricePointEntry(bid);
                     bidSize = PricePointEntry.getSize(bidEntry);
@@ -275,7 +302,7 @@ public class MatchingEngine implements Closeable {
             }
 
 
-            if (ask < maxPrice) {
+            if (level < askLevelCount) {
                 do {
                     askEntry = getPricePointEntry(ask);
                     askSize = PricePointEntry.getSize(askEntry);
